@@ -1,0 +1,65 @@
+name: Build Ender3 V3 SE C13 custom firmware
+
+on:
+  push:
+    branches:
+      - ender3-v3se-c13-fw-build
+    paths:
+      - "ender3-v3se/**"
+      - ".github/workflows/build-ender3-v3se.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout build harness
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Get tested C13/GD303 source
+        run: |
+          git clone --depth 1 https://github.com/navaismo/Ender-3V3-SE.git firmware-src
+          cd firmware-src
+          git rev-parse HEAD
+          grep -n "BOARD_CREALITY_V3_GD303" Marlin/Configuration.h
+          grep -n "default_envs = STM32F103RET6_creality" platformio.ini
+
+      - name: Apply layer-counter patch
+        run: |
+          python ender3-v3se/apply_patch.py firmware-src
+          grep -n "DWIN_SetLayerInfo" firmware-src/Marlin/src/gcode/lcd/M73.cpp
+          grep -n "Layer %u/%u" firmware-src/Marlin/src/lcd/dwin/e3v2/dwin.cpp
+
+      - name: Install PlatformIO
+        run: python -m pip install --upgrade "platformio>=6.1,<7"
+
+      - name: Build C13 firmware
+        working-directory: firmware-src
+        run: pio run -e STM32F103RET6_creality
+
+      - name: Collect firmware
+        run: |
+          mkdir -p artifacts
+          BIN="$(find firmware-src/.pio/build/STM32F103RET6_creality -maxdepth 1 -type f -name '*.bin' | head -n 1)"
+          test -n "$BIN"
+          cp "$BIN" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
+          cp ender3-v3se/gcode_layers_colors.py artifacts/gcode_layers_colors.py
+          ls -lh artifacts
+          sha256sum artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin | tee artifacts/SHA256.txt
+          stat -c "Firmware bytes: %s" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
+
+      - name: Upload build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ender3V3SE-C13-Layers-M600
+          path: artifacts/
+          if-no-files-found: error
