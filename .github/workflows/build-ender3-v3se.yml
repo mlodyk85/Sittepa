@@ -9,7 +9,7 @@ on:
       - ".github/workflows/build-ender3-v3se.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -48,14 +48,29 @@ jobs:
 
       - name: Collect firmware
         run: |
-          mkdir -p artifacts
+          mkdir -p artifacts downloads
           BIN="$(find firmware-src/.pio/build/STM32F103RET6_creality -maxdepth 1 -type f -name '*.bin' | head -n 1)"
           test -n "$BIN"
           cp "$BIN" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
           cp ender3-v3se/gcode_layers_colors.py artifacts/gcode_layers_colors.py
-          ls -lh artifacts
           sha256sum artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin | tee artifacts/SHA256.txt
           stat -c "Firmware bytes: %s" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
+
+          cp artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin downloads/
+          cp artifacts/gcode_layers_colors.py downloads/
+          cp artifacts/SHA256.txt downloads/
+          (
+            cd artifacts
+            zip -9 ../downloads/Ender3V3SE_C13_Layers_M600.zip               Ender3V3SE_C13_GD303_Layers_M600.bin               gcode_layers_colors.py               SHA256.txt
+          )
+
+      - name: Publish direct-download files to GitHub
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f downloads/
+          git commit -m "Publish Ender 3 V3 SE C13 firmware downloads" || exit 0
+          git push origin HEAD:ender3-v3se-c13-fw-build
 
       - name: Upload build
         uses: actions/upload-artifact@v4
