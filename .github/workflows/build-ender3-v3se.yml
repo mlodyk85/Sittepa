@@ -1,9 +1,9 @@
-name: Build Ender3 V3 SE C13 custom firmware
+name: Build Ender3 V3 SE C13 SAFE Pause Layer
 
 on:
   push:
     branches:
-      - ender3-v3se-c13-fw-build
+      - ender3-v3se-c13-layer-pause-safe
     paths:
       - "ender3-v3se/**"
       - ".github/workflows/build-ender3-v3se.yml"
@@ -25,24 +25,29 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Get tested C13/GD303 source
+      - name: Get exact tested C13/GD303 source
         run: |
-          git clone --depth 1 https://github.com/navaismo/Ender-3V3-SE.git firmware-src
+          mkdir firmware-src
           cd firmware-src
-          git rev-parse HEAD
+          git init
+          git remote add origin https://github.com/navaismo/Ender-3V3-SE.git
+          git fetch --depth 1 origin e714e1e657c37653eebc82c0d793c5f9de329ead
+          git checkout FETCH_HEAD
+          test "$(git rev-parse HEAD)" = "e714e1e657c37653eebc82c0d793c5f9de329ead"
           grep -n "BOARD_CREALITY_V3_GD303" Marlin/Configuration.h
           grep -n "default_envs = STM32F103RET6_creality" platformio.ini
 
-      - name: Apply layer-counter patch
+      - name: Apply SAFE Layers + Pause Layer patch
         run: |
           python ender3-v3se/apply_patch.py firmware-src
           grep -n "DWIN_SetLayerInfo" firmware-src/Marlin/src/gcode/lcd/M73.cpp
-          grep -n "Layer %u/%u" firmware-src/Marlin/src/lcd/dwin/e3v2/dwin.cpp
+          grep -n "Pause Layer" firmware-src/Marlin/src/lcd/dwin/e3v2/dwin.cpp
+          ! grep -q "LayerPauseMenu" firmware-src/Marlin/src/lcd/dwin/e3v2/dwin.h
 
       - name: Install PlatformIO
         run: python -m pip install --upgrade "platformio>=6.1,<7"
 
-      - name: Build C13 firmware
+      - name: Build C13 SAFE firmware
         working-directory: firmware-src
         run: pio run -e STM32F103RET6_creality
 
@@ -51,17 +56,14 @@ jobs:
           mkdir -p artifacts downloads
           BIN="$(find firmware-src/.pio/build/STM32F103RET6_creality -maxdepth 1 -type f -name '*.bin' | head -n 1)"
           test -n "$BIN"
-          cp "$BIN" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
-          cp ender3-v3se/gcode_layers_colors.py artifacts/gcode_layers_colors.py
-          sha256sum artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin | tee artifacts/SHA256.txt
-          stat -c "Firmware bytes: %s" artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin
-
-          cp artifacts/Ender3V3SE_C13_GD303_Layers_M600.bin downloads/
-          cp artifacts/gcode_layers_colors.py downloads/
-          cp artifacts/SHA256.txt downloads/
+          cp "$BIN" artifacts/Ender3V3SE_C13_GD303_Layers_PauseLayer_SAFE.bin
+          sha256sum artifacts/Ender3V3SE_C13_GD303_Layers_PauseLayer_SAFE.bin | tee artifacts/SHA256_SAFE.txt
+          stat -c "Firmware bytes: %s" artifacts/Ender3V3SE_C13_GD303_Layers_PauseLayer_SAFE.bin
+          cp artifacts/Ender3V3SE_C13_GD303_Layers_PauseLayer_SAFE.bin downloads/
+          cp artifacts/SHA256_SAFE.txt downloads/
           (
             cd artifacts
-            zip -9 ../downloads/Ender3V3SE_C13_Layers_M600.zip               Ender3V3SE_C13_GD303_Layers_M600.bin               gcode_layers_colors.py               SHA256.txt
+            zip -9 ../downloads/Ender3V3SE_C13_Layers_PauseLayer_SAFE.zip               Ender3V3SE_C13_GD303_Layers_PauseLayer_SAFE.bin               SHA256_SAFE.txt
           )
 
       - name: Publish direct-download files to GitHub
@@ -69,12 +71,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -f downloads/
-          git commit -m "Publish Ender 3 V3 SE C13 firmware downloads" || exit 0
-          git push origin HEAD:ender3-v3se-c13-fw-build
+          git commit -m "Publish SAFE Pause Layer firmware" || exit 0
+          git push origin HEAD:ender3-v3se-c13-layer-pause-safe
 
       - name: Upload build
         uses: actions/upload-artifact@v4
         with:
-          name: Ender3V3SE-C13-Layers-M600
+          name: Ender3V3SE-C13-Layers-PauseLayer-SAFE
           path: artifacts/
           if-no-files-found: error
